@@ -31,6 +31,10 @@ go.work.sum
 backups/
 students/
 
+# Logs
+logs/
+*.log
+
 # Editor/IDE
 # .idea/
 # .vscode/

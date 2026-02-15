@@ -2,9 +2,12 @@ package server
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"time"
 
 	"github.com/edu-lab-platform/internal/backup"
 	"github.com/edu-lab-platform/internal/lab"
@@ -31,8 +34,8 @@ type StopLabRequest struct {
 
 // RestoreRequest body.
 type RestoreRequest struct {
-	StudentID   string `json:"student_id"`
-	BackupFile  string `json:"backup_file"`
+	StudentID  string `json:"student_id"`
+	BackupFile string `json:"backup_file"`
 }
 
 // Response common.
@@ -68,12 +71,15 @@ func HandleStart(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusInternalServerError, Response{OK: false, Error: err.Error()})
 		return
 	}
+
+	// Get the actual URL with dynamic port
 	url, password := lab.Info(req.StudentID)
 	workDir, _ := lab.WorkDirPath(base, req.StudentID)
+
 	writeJSON(w, http.StatusOK, Response{OK: true, Data: map[string]string{
-		"url":       url,
-		"password":  password,
-		"work_dir":  workDir,
+		"url":      url,
+		"password": password,
+		"work_dir": workDir,
 	}})
 }
 
@@ -160,6 +166,74 @@ func HandleStructure(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, Response{OK: true})
 }
 
+// НОВАЯ ФУНКЦИЯ: HandleStatus проверяет, запущена ли лаборатория
+func HandleStatus(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{OK: false, Error: "GET only"})
+		return
+	}
+
+	studentID := r.URL.Query().Get("student_id")
+	if studentID == "" {
+		writeJSON(w, http.StatusBadRequest, Response{OK: false, Error: "student_id обязателен"})
+		return
+	}
+
+	running, err := lab.IsRunning(studentID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, Response{OK: false, Error: err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, Response{OK: true, Data: map[string]interface{}{
+		"running":    running,
+		"student_id": studentID,
+	}})
+}
+
+// НОВАЯ ФУНКЦИЯ: HandleList возвращает список всех студентов и их статусы
+func HandleList(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{OK: false, Error: "GET only"})
+		return
+	}
+
+	base := BasePath()
+	studentsDir := filepath.Join(base, "students")
+
+	// Читаем папку students
+	entries, err := os.ReadDir(studentsDir)
+	if err != nil {
+		writeJSON(w, http.StatusOK, Response{OK: true, Data: []interface{}{}})
+		return
+	}
+
+	var students []map[string]interface{}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			studentID := entry.Name()
+			running, _ := lab.IsRunning(studentID)
+
+			// Получаем список бэкапов для студента
+			backupPattern := filepath.Join(base, "backups", studentID+"_*.tar.gz")
+			backups, _ := filepath.Glob(backupPattern)
+			backupFiles := make([]string, 0)
+			for _, b := range backups {
+				backupFiles = append(backupFiles, filepath.Base(b))
+			}
+
+			students = append(students, map[string]interface{}{
+				"id":       studentID,
+				"running":  running,
+				"backups":  backupFiles,
+				"work_dir": filepath.Join(studentsDir, studentID, "work"),
+			})
+		}
+	}
+
+	writeJSON(w, http.StatusOK, Response{OK: true, Data: students})
+}
+
 // WebDir returns path to web static files (next to executable, in cwd, or in cwd/edu-lab-platform).
 func WebDir() string {
 	base := BasePath()
@@ -178,6 +252,28 @@ func WebDir() string {
 	return filepath.Join(base, "web")
 }
 
+// HandleGetLogs returns recent logs
+func HandleGetLogs(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		writeJSON(w, http.StatusMethodNotAllowed, Response{OK: false, Error: "GET only"})
+		return
+	}
+
+	// Get log file path
+	logDir := filepath.Join(BasePath(), "logs")
+	logFile := filepath.Join(logDir, fmt.Sprintf("lab_%s.log", time.Now().Format("2006-01-02")))
+
+	// Read last 100 lines
+	cmd := exec.Command("tail", "-n", "100", logFile)
+	out, err := cmd.Output()
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, Response{OK: false, Error: err.Error()})
+		return
+	}
+
+	writeJSON(w, http.StatusOK, Response{OK: true, Data: string(out)})
+}
+
 // Mux returns http.ServeMux with all routes and static frontend.
 func Mux() *http.ServeMux {
 	m := http.NewServeMux()
@@ -186,6 +282,10 @@ func Mux() *http.ServeMux {
 	m.HandleFunc("/api/backup", HandleBackup)
 	m.HandleFunc("/api/restore", HandleRestore)
 	m.HandleFunc("/api/structure", HandleStructure)
+	m.HandleFunc("/api/logs", HandleGetLogs)
+	m.HandleFunc("/api/status", HandleStatus) // НОВЫЙ МАРШРУТ
+	m.HandleFunc("/api/list", HandleList)     // НОВЫЙ МАРШРУТ для админки
 	m.Handle("/", http.FileServer(http.Dir(WebDir())))
+
 	return m
 }

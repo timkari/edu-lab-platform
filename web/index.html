@@ -17,6 +17,8 @@
       --text: #e8e8ed;
       --muted: #8888a0;
       --error: #ff6b6b;
+      --warning: #ffb86b;
+      --success: #50fa7b;
     }
     * {
       box-sizing: border-box;
@@ -39,7 +41,7 @@
       border: 1px solid var(--border);
       border-radius: 16px;
       padding: 2.5rem;
-      max-width: 420px;
+      max-width: 480px;
       width: 100%;
       text-align: center;
     }
@@ -73,7 +75,7 @@
       border: 1px solid var(--border);
       border-radius: 8px;
       color: var(--text);
-      margin-bottom: 1.5rem;
+      margin-bottom: 1rem;
     }
     input:focus {
       outline: none;
@@ -106,6 +108,13 @@
       cursor: not-allowed;
       transform: none;
     }
+    .btn.stop {
+      background: var(--warning);
+      color: var(--bg);
+    }
+    .btn.stop:hover {
+      background: #e6a75a;
+    }
     .result {
       margin-top: 1.5rem;
       padding: 1.25rem;
@@ -122,6 +131,9 @@
     .result.error {
       border-color: var(--error);
       color: var(--error);
+    }
+    .result.success {
+      border-color: var(--success);
     }
     .result a {
       color: var(--accent);
@@ -141,47 +153,129 @@
       color: var(--muted);
       margin-right: 0.35rem;
     }
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 1rem;
+    }
+    .button-group .btn {
+      flex: 1;
+    }
+    .status-badge {
+      display: inline-block;
+      padding: 0.25rem 0.75rem;
+      border-radius: 20px;
+      font-size: 0.7rem;
+      font-weight: 600;
+      margin-left: 0.5rem;
+    }
+    .status-running {
+      background: rgba(80, 250, 123, 0.2);
+      color: var(--success);
+    }
+    .status-stopped {
+      background: rgba(255, 107, 107, 0.2);
+      color: var(--error);
+    }
   </style>
 </head>
 <body>
   <div class="card">
     <h1>Виртуальная лаборатория</h1>
     <p class="sub">Запуск рабочего стола в контейнере</p>
+    
     <label for="student">Имя студента / идентификатор</label>
     <input type="text" id="student" name="student" placeholder="student1" value="student1" autocomplete="off">
-    <button type="button" class="btn" id="startBtn">Запустить лабораторию</button>
+    
+    <div class="button-group">
+      <button type="button" class="btn" id="startBtn">🚀 Запустить</button>
+      <button type="button" class="btn stop" id="stopBtn" style="display: none;">🛑 Остановить</button>
+    </div>
+    
+    <div id="status" style="margin-bottom: 1rem; font-size: 0.85rem; display: none;">
+      <span>Статус: </span>
+      <span id="statusText" class="status-badge">Не запущено</span>
+    </div>
+    
     <div class="result" id="result"></div>
   </div>
+
   <script>
     const studentInput = document.getElementById('student');
     const startBtn = document.getElementById('startBtn');
+    const stopBtn = document.getElementById('stopBtn');
     const resultEl = document.getElementById('result');
+    const statusDiv = document.getElementById('status');
+    const statusText = document.getElementById('statusText');
+
+    let currentStudentId = null;
+    let labData = null;
+    let beforeUnloadHandler = null;
 
     function showResult(ok, data) {
-      resultEl.classList.remove('visible', 'error');
+      resultEl.classList.remove('visible', 'error', 'success');
       resultEl.innerHTML = '';
+      
       if (ok && data) {
-        resultEl.classList.add('visible');
+        resultEl.classList.add('visible', 'success');
         resultEl.innerHTML = [
-          '<p><span class="label">Ссылка:</span> <a href="' + data.url + '" target="_blank" rel="noopener">' + data.url + '</a></p>',
+          '<p><span class="label">✅ Лаборатория запущена!</span></p>',
+          '<p><span class="label">Ссылка:</span> <a href="' + data.url + '" target="_blank" rel="noopener" id="labLink">' + data.url + '</a></p>',
           '<p><span class="label">Пароль VNC:</span> <code>' + (data.password || 'vncpassword') + '</code></p>',
           data.work_dir ? '<p><span class="label">Папка на диске:</span> <code>' + data.work_dir + '</code></p>' : ''
         ].join('');
+        
+        // Показываем кнопку остановки и статус
+        stopBtn.style.display = 'block';
+        startBtn.style.display = 'none';
+        statusDiv.style.display = 'block';
+        statusText.textContent = '🟢 Запущено';
+        statusText.className = 'status-badge status-running';
+        
+        // Сохраняем данные текущей сессии
+        currentStudentId = studentInput.value.trim();
+        labData = data;
+        
+        // Добавляем обработчик перед закрытием страницы
+        beforeUnloadHandler = function(e) {
+          // Пытаемся остановить лабораторию при закрытии
+          stopLab(currentStudentId, true);
+          return undefined;
+        };
+        window.addEventListener('beforeunload', beforeUnloadHandler);
+        
       } else if (!ok && data) {
         resultEl.classList.add('visible', 'error');
         resultEl.textContent = data.error || 'Ошибка запуска';
       }
     }
 
-    startBtn.addEventListener('click', async () => {
-      const studentId = (studentInput.value || 'student1').trim();
-      if (!studentId) {
-        showResult(false, { error: 'Введите имя студента' });
-        return;
+    function showStopSuccess(message) {
+      resultEl.classList.remove('visible', 'error', 'success');
+      resultEl.classList.add('visible', 'success');
+      resultEl.innerHTML = '<p>🛑 ' + (message || 'Лаборатория остановлена. Файлы сохранены.') + '</p>';
+      
+      // Убираем кнопку остановки и показываем запуск
+      stopBtn.style.display = 'none';
+      startBtn.style.display = 'block';
+      statusDiv.style.display = 'block';
+      statusText.textContent = '⚫ Остановлено';
+      statusText.className = 'status-badge status-stopped';
+      
+      // Удаляем обработчик
+      if (beforeUnloadHandler) {
+        window.removeEventListener('beforeunload', beforeUnloadHandler);
+        beforeUnloadHandler = null;
       }
+      
+      currentStudentId = null;
+      labData = null;
+    }
+
+    async function startLab(studentId) {
       startBtn.disabled = true;
       resultEl.classList.remove('visible', 'error');
-      resultEl.textContent = 'Запуск...';
+      resultEl.textContent = '⏳ Запуск лаборатории...';
 
       try {
         const res = await fetch('/api/start', {
@@ -196,11 +290,109 @@
           showResult(false, { error: data.error || 'Не удалось запустить' });
         }
       } catch (e) {
-        showResult(false, { error: 'Сеть: ' + e.message });
+        showResult(false, { error: 'Ошибка сети: ' + e.message });
       } finally {
         startBtn.disabled = false;
       }
+    }
+
+    async function stopLab(studentId, silent = false) {
+      if (!studentId) return;
+      
+      if (!silent) {
+        stopBtn.disabled = true;
+        resultEl.classList.remove('visible', 'error');
+        resultEl.textContent = '⏳ Остановка лаборатории...';
+      }
+
+      try {
+        const res = await fetch('/api/stop', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ student_id: studentId })
+        });
+        
+        if (!silent) {
+          const data = await res.json();
+          if (data.ok) {
+            showStopSuccess('Лаборатория успешно остановлена. Бэкап создан.');
+          } else {
+            showStopSuccess('Лаборатория остановлена (с ошибкой: ' + (data.error || 'неизвестно') + ')');
+          }
+        } else {
+          // Тихая остановка при закрытии
+          await fetch('/api/stop', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ student_id: studentId }),
+            keepalive: true  // Важно для запросов при закрытии
+          });
+        }
+      } catch (e) {
+        if (!silent) {
+          showStopSuccess('Лаборатория остановлена (ошибка сети: ' + e.message + ')');
+        }
+      } finally {
+        if (!silent) {
+          stopBtn.disabled = false;
+        }
+      }
+    }
+
+    // Обработчик запуска
+    startBtn.addEventListener('click', () => {
+      const studentId = (studentInput.value || 'student1').trim();
+      if (!studentId) {
+        showResult(false, { error: 'Введите имя студента' });
+        return;
+      }
+      startLab(studentId);
     });
+
+    // Обработчик остановки
+    stopBtn.addEventListener('click', () => {
+      if (currentStudentId) {
+        stopLab(currentStudentId, false);
+      }
+    });
+
+    // Восстановление состояния при загрузке страницы
+    window.addEventListener('load', () => {
+      // Проверяем, может быть уже была активная сессия
+      const savedStudent = localStorage.getItem('lastStudent');
+      if (savedStudent) {
+        studentInput.value = savedStudent;
+        // Не запускаем автоматически, но подсказываем
+        resultEl.classList.add('visible', 'success');
+        resultEl.innerHTML = '<p>💡 Введите имя и нажмите "Запустить" для начала работы</p>';
+      }
+    });
+
+    // Сохраняем последнего студента в localStorage
+    studentInput.addEventListener('change', () => {
+      if (studentInput.value.trim()) {
+        localStorage.setItem('lastStudent', studentInput.value.trim());
+      }
+    });
+
+    // Проверка статуса (можно добавить периодическую проверку)
+    async function checkStatus(studentId) {
+      if (!studentId) return;
+      try {
+        // Здесь можно добавить эндпоинт для проверки статуса
+        // const res = await fetch('/api/status/' + studentId);
+        // Обновлять UI в зависимости от статуса
+      } catch (e) {
+        // Игнорируем
+      }
+    }
+
+    // Периодическая проверка статуса (раз в 30 секунд)
+    setInterval(() => {
+      if (currentStudentId) {
+        checkStatus(currentStudentId);
+      }
+    }, 30000);
   </script>
 </body>
 </html>
