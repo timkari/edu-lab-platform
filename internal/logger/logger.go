@@ -83,6 +83,12 @@ func (l *Logger) Error(format string, v ...interface{}) {
 	l.errorLog.Println(msg)
 }
 
+// Debug logs debug message
+func (l *Logger) Debug(format string, v ...interface{}) {
+	msg := fmt.Sprintf(format, v...)
+	l.infoLog.Println("[DEBUG] " + msg)
+}
+
 // Close closes the log file
 func (l *Logger) Close() {
 	if l.logFile != nil {

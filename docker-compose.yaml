@@ -1,0 +1,20 @@
+version: '3.8'
+
+services:
+  lab-platform:
+    build: .
+    container_name: virtual-lab
+    ports:
+      - "9000:9000"  # API
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - lab-data:/app
+    environment:
+      - TZ=Europe/Moscow
+      - DOCKER_HOST=unix:///var/run/docker.sock
+    privileged: true  # Даем больше привилегий для управления сетью
+    network_mode: bridge
+    restart: unless-stopped
+
+volumes:
+  lab-data:
