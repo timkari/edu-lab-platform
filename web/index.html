@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Виртуальная лаборатория</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;600&family=Unbounded:wght@500;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0f0f14;
+      --surface: #1a1a24;
+      --border: #2d2d3a;
+      --accent: #00d4aa;
+      --accent-dim: #00a884;
+      --text: #e8e8ed;
+      --muted: #8888a0;
+      --error: #ff6b6b;
+    }
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    body {
+      font-family: 'JetBrains Mono', monospace;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+    }
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: 16px;
+      padding: 2.5rem;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+    }
+    h1 {
+      font-family: 'Unbounded', sans-serif;
+      font-weight: 700;
+      font-size: 1.35rem;
+      margin-bottom: 0.5rem;
+      color: var(--text);
+    }
+    .sub {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 2rem;
+    }
+    label {
+      display: block;
+      text-align: left;
+      font-size: 0.75rem;
+      color: var(--muted);
+      margin-bottom: 0.35rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+    input {
+      width: 100%;
+      padding: 0.75rem 1rem;
+      font-family: inherit;
+      font-size: 0.95rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      color: var(--text);
+      margin-bottom: 1.5rem;
+    }
+    input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+    input::placeholder {
+      color: var(--muted);
+    }
+    .btn {
+      width: 100%;
+      padding: 1rem 1.5rem;
+      font-family: 'Unbounded', sans-serif;
+      font-weight: 500;
+      font-size: 0.95rem;
+      background: var(--accent);
+      color: var(--bg);
+      border: none;
+      border-radius: 10px;
+      cursor: pointer;
+      transition: background 0.2s, transform 0.1s;
+    }
+    .btn:hover {
+      background: var(--accent-dim);
+    }
+    .btn:active {
+      transform: scale(0.98);
+    }
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+    .result {
+      margin-top: 1.5rem;
+      padding: 1.25rem;
+      background: var(--bg);
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      text-align: left;
+      font-size: 0.85rem;
+      display: none;
+    }
+    .result.visible {
+      display: block;
+    }
+    .result.error {
+      border-color: var(--error);
+      color: var(--error);
+    }
+    .result a {
+      color: var(--accent);
+      text-decoration: none;
+      word-break: break-all;
+    }
+    .result a:hover {
+      text-decoration: underline;
+    }
+    .result p {
+      margin-bottom: 0.5rem;
+    }
+    .result p:last-child {
+      margin-bottom: 0;
+    }
+    .result .label {
+      color: var(--muted);
+      margin-right: 0.35rem;
+    }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>Виртуальная лаборатория</h1>
+    <p class="sub">Запуск рабочего стола в контейнере</p>
+    <label for="student">Имя студента / идентификатор</label>
+    <input type="text" id="student" name="student" placeholder="student1" value="student1" autocomplete="off">
+    <button type="button" class="btn" id="startBtn">Запустить лабораторию</button>
+    <div class="result" id="result"></div>
+  </div>
+  <script>
+    const studentInput = document.getElementById('student');
+    const startBtn = document.getElementById('startBtn');
+    const resultEl = document.getElementById('result');
+
+    function showResult(ok, data) {
+      resultEl.classList.remove('visible', 'error');
+      resultEl.innerHTML = '';
+      if (ok && data) {
+        resultEl.classList.add('visible');
+        resultEl.innerHTML = [
+          '<p><span class="label">Ссылка:</span> <a href="' + data.url + '" target="_blank" rel="noopener">' + data.url + '</a></p>',
+          '<p><span class="label">Пароль VNC:</span> <code>' + (data.password || 'vncpassword') + '</code></p>',
+          data.work_dir ? '<p><span class="label">Папка на диске:</span> <code>' + data.work_dir + '</code></p>' : ''
+        ].join('');
+      } else if (!ok && data) {
+        resultEl.classList.add('visible', 'error');
+        resultEl.textContent = data.error || 'Ошибка запуска';
+      }
+    }
+
+    startBtn.addEventListener('click', async () => {
+      const studentId = (studentInput.value || 'student1').trim();
+      if (!studentId) {
+        showResult(false, { error: 'Введите имя студента' });
+        return;
+      }
+      startBtn.disabled = true;
+      resultEl.classList.remove('visible', 'error');
+      resultEl.textContent = 'Запуск...';
+
+      try {
+        const res = await fetch('/api/start', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ student_id: studentId })
+        });
+        const data = await res.json();
+        if (data.ok && data.data) {
+          showResult(true, data.data);
+        } else {
+          showResult(false, { error: data.error || 'Не удалось запустить' });
+        }
+      } catch (e) {
+        showResult(false, { error: 'Сеть: ' + e.message });
+      } finally {
+        startBtn.disabled = false;
+      }
+    });
+  </script>
+</body>
+</html>
