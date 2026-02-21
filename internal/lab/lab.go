@@ -3,8 +3,8 @@ package lab
 import (
 	"fmt"
 	"net"
-	"os"
 	"os/exec"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -22,48 +22,50 @@ func ContainerName(studentID string) string {
 // FindFreePort finds an available port starting from base port
 func FindFreePort(basePort int) (int, error) {
 	log := logger.Get()
-	
-	for port := basePort; port < basePort+100; port++ {
-		// Способ 1: Проверка через Docker (быстро, но не всегда точно)
-		cmd := exec.Command("docker", "ps", "--filter", fmt.Sprintf("publish=%d", port), "-q")
-		out, err := cmd.Output()
-		if err != nil {
-			log.Debug("Docker port check failed for %d: %v", port, err)
-			continue
-		}
-		
-		// Если порт занят каким-то контейнером
-		if len(out) > 0 {
-			log.Debug("Port %d is used by Docker container", port)
-			continue
-		}
-		
-		// Способ 2: Проверка через net.Listen (более надежно)
+
+	log.Info("Searching for free port starting from %d", basePort)
+
+	for port := basePort; port < basePort+1000; port++ {
+		// Упрощенная, но надежная проверка
 		if isPortAvailable(port) {
 			log.Info("Found free port: %d", port)
 			return port, nil
 		}
-		
-		log.Debug("Port %d is not available", port)
+
+		// Для отладки - если порт не доступен, проверим почему
+		addr := fmt.Sprintf(":%d", port)
+		ln, err := net.Listen("tcp", addr)
+		if err != nil {
+			log.Debug("Port %d is busy: %v", port, err)
+		} else {
+			ln.Close()
+			log.Debug("Port %d should be available but isPortAvailable returned false", port)
+		}
 	}
-	
-	return 0, fmt.Errorf("no free ports found in range %d-%d", basePort, basePort+100)
+
+	return 0, fmt.Errorf("no free ports found in range %d-%d", basePort, basePort+1000)
 }
 
 // isPortAvailable проверяет, доступен ли порт для прослушивания
 func isPortAvailable(port int) bool {
-	// Пытаемся открыть TCP соединение на порту
-	addr := fmt.Sprintf(":%d", port)
-	ln, err := net.Listen("tcp", addr)
-	if err != nil {
-		return false
+	// Пробуем разные адреса для надежности
+	addresses := []string{
+		fmt.Sprintf(":%d", port),          // Все интерфейсы
+		fmt.Sprintf("0.0.0.0:%d", port),   // Явно все интерфейсы
+		fmt.Sprintf("127.0.0.1:%d", port), // Только localhost
 	}
-	ln.Close()
-	
-	// Даем небольшой таймаут для освобождения порта
-	time.Sleep(50 * time.Millisecond)
-	
-	return true
+
+	for _, addr := range addresses {
+		// Пробуем слушать TCP
+		ln, err := net.Listen("tcp", addr)
+		if err == nil {
+			ln.Close()
+			time.Sleep(50 * time.Millisecond)
+			return true
+		}
+	}
+
+	return false
 }
 
 // Start runs Docker container with VNC desktop, mounts student work dir.
@@ -83,15 +85,29 @@ func Start(basePath, studentID string) error {
 		return err
 	}
 
-	// Находим свободный порт
-	webPort, err := FindFreePort(6080)
+	// Находим свободный порт - начинаем с 8081 как в тесте
+	webPort, err := FindFreePort(8081) // Используем 8081 как в тесте
 	if err != nil {
 		log.Error("Failed to find free port for %s: %v", studentID, err)
-		// Пробуем альтернативный диапазон портов
-		webPort, err = FindFreePort(8080)
+		// Пробуем другой диапазон
+		webPort, err = FindFreePort(10000)
 		if err != nil {
 			return fmt.Errorf("failed to find free web port: %v", err)
 		}
+	}
+
+	log.Info("Selected port %d for student %s", webPort, studentID)
+
+	// Проверим, действительно ли порт свободен
+	if !isPortAvailable(webPort) {
+		log.Warn("Port %d is not available according to isPortAvailable, but FindFreePort returned it", webPort)
+	}
+
+	// Проверим через Docker
+	dockerCheckCmd := exec.Command("docker", "ps", "--filter", fmt.Sprintf("publish=%d", webPort), "-q")
+	dockerOut, _ := dockerCheckCmd.Output()
+	if len(dockerOut) > 0 {
+		log.Warn("Port %d is used by Docker containers according to docker ps", webPort)
 	}
 
 	containerName := ContainerName(studentID)
@@ -104,7 +120,7 @@ func Start(basePath, studentID string) error {
 	}
 
 	// Запускаем контейнер
-	cmd := exec.Command("docker", "run", "-d",
+	runCmd := exec.Command("docker", "run", "-d",
 		"--name", containerName,
 		"--restart", "no",
 		"-p", fmt.Sprintf("%d:80", webPort),
@@ -116,7 +132,7 @@ func Start(basePath, studentID string) error {
 		config.LabImage,
 	)
 
-	output, err := cmd.CombinedOutput()
+	output, err := runCmd.CombinedOutput()
 	if err != nil {
 		log.Error("Docker run failed for %s: %v\n%s", studentID, err, string(output))
 		return fmt.Errorf("docker run failed: %v\n%s", err, string(output))
@@ -154,7 +170,7 @@ func Stop(studentID string) error {
 	}
 
 	log.Info("Stopping container %s", containerName)
-	
+
 	// Останавливаем контейнер с таймаутом
 	stopCmd := exec.Command("docker", "stop", "--time", "10", containerName)
 	if err := stopCmd.Run(); err != nil {
@@ -171,14 +187,14 @@ func Stop(studentID string) error {
 }
 
 // Info returns URL and password for the lab.
+// Info возвращает URL для доступа ИЗ ХОСТА
 func Info(studentID string) (url, password string) {
 	containerName := ContainerName(studentID)
-	
-	// Получаем информацию о порте
+
+	// Получаем порт, который проброшен на ХОСТ
 	cmd := exec.Command("docker", "port", containerName, "80")
 	out, err := cmd.Output()
 	if err != nil {
-		// Если не удалось получить порт, возвращаем значения по умолчанию
 		return "http://localhost:6080", config.VNCPassword
 	}
 
@@ -187,12 +203,12 @@ func Info(studentID string) (url, password string) {
 		return "http://localhost:6080", config.VNCPassword
 	}
 
-	// Парсим вывод "0.0.0.0:6081" или подобное
+	// Парсим "0.0.0.0:6081"
 	parts := strings.Split(portStr, ":")
 	if len(parts) >= 2 {
 		hostPort := parts[len(parts)-1]
-		// Проверяем, что порт - число
 		if _, err := strconv.Atoi(hostPort); err == nil {
+			// ВАЖНО: используем localhost хоста, а не контейнера
 			return fmt.Sprintf("http://localhost:%s", hostPort), config.VNCPassword
 		}
 	}
@@ -203,14 +219,14 @@ func Info(studentID string) (url, password string) {
 // IsRunning checks if container exists and is running.
 func IsRunning(studentID string) (bool, error) {
 	containerName := ContainerName(studentID)
-	
+
 	// Проверяем статус контейнера
 	out, err := exec.Command("docker", "inspect", "-f", "{{.State.Running}}", containerName).Output()
 	if err != nil {
 		// Контейнер не существует или другая ошибка
 		return false, nil
 	}
-	
+
 	return strings.TrimSpace(string(out)) == "true", nil
 }
 
@@ -240,7 +256,7 @@ func GetAllRunning() ([]string, error) {
 // GetContainerPort возвращает реальный порт контейнера
 func GetContainerPort(studentID string) (int, error) {
 	containerName := ContainerName(studentID)
-	
+
 	// Получаем информацию о порте
 	cmd := exec.Command("docker", "port", containerName, "80")
 	out, err := cmd.Output()
