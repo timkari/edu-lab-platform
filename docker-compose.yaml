@@ -4,16 +4,18 @@ services:
   lab-platform:
     build: .
     container_name: virtual-lab
+    user: root
     ports:
-      - "9000:9000"  # API
+      - "9000:9000"              # Только API платформы
+      - "6080-6180:6080-6180"    # Диапазон для VNC (если нужно)
+      # Удалить строку: - "8080-8180:8080-8180"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - lab-data:/app
     environment:
       - TZ=Europe/Moscow
       - DOCKER_HOST=unix:///var/run/docker.sock
-    privileged: true  # Даем больше привилегий для управления сетью
-    network_mode: bridge
+    privileged: true
     restart: unless-stopped
 
 volumes:
