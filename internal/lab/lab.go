@@ -21,51 +21,50 @@ func ContainerName(studentID string) string {
 
 // FindFreePort finds an available port starting from base port
 func FindFreePort(basePort int) (int, error) {
-	log := logger.Get()
-
-	log.Info("Searching for free port starting from %d", basePort)
-
-	for port := basePort; port < basePort+1000; port++ {
-		// Упрощенная, но надежная проверка
-		if isPortAvailable(port) {
-			log.Info("Found free port: %d", port)
-			return port, nil
-		}
-
-		// Для отладки - если порт не доступен, проверим почему
-		addr := fmt.Sprintf(":%d", port)
-		ln, err := net.Listen("tcp", addr)
-		if err != nil {
-			log.Debug("Port %d is busy: %v", port, err)
-		} else {
-			ln.Close()
-			log.Debug("Port %d should be available but isPortAvailable returned false", port)
-		}
-	}
-
-	return 0, fmt.Errorf("no free ports found in range %d-%d", basePort, basePort+1000)
+    log := logger.Get()
+    
+    log.Info("Searching for free port starting from %d", basePort)
+    
+    for port := basePort; port < basePort+1000; port++ {
+        // Проверяем, не занят ли порт другими контейнерами
+        checkCmd := exec.Command("docker", "ps", "--filter", fmt.Sprintf("publish=%d", port), "-q")
+        checkOut, _ := checkCmd.Output()
+        if len(checkOut) > 0 {
+            log.Debug("Port %d is used by another container", port)
+            continue
+        }
+        
+        // Проверяем, доступен ли порт для прослушивания
+        if isPortAvailable(port) {
+            log.Info("Found free port: %d", port)
+            return port, nil
+        }
+        
+        log.Debug("Port %d is not available", port)
+    }
+    
+    return 0, fmt.Errorf("no free ports found in range %d-%d", basePort, basePort+1000)
 }
 
 // isPortAvailable проверяет, доступен ли порт для прослушивания
 func isPortAvailable(port int) bool {
-	// Пробуем разные адреса для надежности
-	addresses := []string{
-		fmt.Sprintf(":%d", port),          // Все интерфейсы
-		fmt.Sprintf("0.0.0.0:%d", port),   // Явно все интерфейсы
-		fmt.Sprintf("127.0.0.1:%d", port), // Только localhost
-	}
-
-	for _, addr := range addresses {
-		// Пробуем слушать TCP
-		ln, err := net.Listen("tcp", addr)
-		if err == nil {
-			ln.Close()
-			time.Sleep(50 * time.Millisecond)
-			return true
-		}
-	}
-
-	return false
+    addr := fmt.Sprintf(":%d", port)
+    
+    // Пробуем открыть порт для прослушивания
+    ln, err := net.Listen("tcp", addr)
+    if err != nil {
+        return false
+    }
+    ln.Close()
+    
+    // Даем время на освобождение
+    time.Sleep(50 * time.Millisecond)
+    
+    // Дополнительно проверяем через Docker
+    checkCmd := exec.Command("docker", "ps", "--filter", fmt.Sprintf("publish=%d", port), "-q")
+    out, _ := checkCmd.Output()
+    
+    return len(out) == 0
 }
 
 // Start runs Docker container with VNC desktop, mounts student work dir.
