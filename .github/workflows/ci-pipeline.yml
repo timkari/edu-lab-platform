@@ -1,0 +1,22 @@
+name: PipeLine
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: self-hosted
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        
+      - name: Run Docker Compose
+        run: |
+          docker-compose down
+          docker-compose up -d --build
+
+          
