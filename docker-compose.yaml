@@ -6,17 +6,27 @@ services:
     container_name: virtual-lab
     user: root
     ports:
-      - "9000:9000"              # Только API платформы
-      - "6080-6180:6080-6180"    # Диапазон для VNC (если нужно)
-      # Удалить строку: - "8080-8180:8080-8180"
+      - "9000:9000"              # API платформы
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - lab-data:/app
+      # Используем именованные volumes для данных (работает на всех платформах!)
+      - lab-students:/app/students
+      - lab-backups:/app/backups
+      - lab-logs:/app/logs
+      - ./web:/app/web
     environment:
       - TZ=Europe/Moscow
       - DOCKER_HOST=unix:///var/run/docker.sock
+      - USE_DOCKER_VOLUMES=true  # Включаем режим volumes для Mac
+      - PLATFORM=${PLATFORM:-auto}  # auto, mac, linux, windows
+    # Добавляем группу docker для доступа к сокету
+    group_add:
+      - "999"  # стандартный GID группы docker
+      - "1000" # запасной вариант
     privileged: true
     restart: unless-stopped
 
 volumes:
-  lab-data:
+  lab-students:
+  lab-backups:
+  lab-logs:
