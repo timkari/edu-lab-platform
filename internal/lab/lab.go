@@ -188,31 +188,33 @@ func Stop(studentID string) error {
 // Info returns URL and password for the lab.
 // Info возвращает URL для доступа ИЗ ХОСТА
 func Info(studentID string) (url, password string) {
-	containerName := ContainerName(studentID)
+    containerName := ContainerName(studentID)
 
-	// Получаем порт, который проброшен на ХОСТ
-	cmd := exec.Command("docker", "port", containerName, "80")
-	out, err := cmd.Output()
-	if err != nil {
-		return "http://localhost:6080", config.VNCPassword
-	}
+    cmd := exec.Command("docker", "port", containerName, "80")
+    out, err := cmd.Output()
+    if err != nil {
+        return "http://localhost:6080", config.VNCPassword
+    }
 
-	portStr := strings.TrimSpace(string(out))
-	if portStr == "" {
-		return "http://localhost:6080", config.VNCPassword
-	}
+    portStr := strings.TrimSpace(string(out))
+    if portStr == "" {
+        return "http://localhost:6080", config.VNCPassword
+    }
 
-	// Парсим "0.0.0.0:6081"
-	parts := strings.Split(portStr, ":")
-	if len(parts) >= 2 {
-		hostPort := parts[len(parts)-1]
-		if _, err := strconv.Atoi(hostPort); err == nil {
-			// ВАЖНО: используем localhost хоста, а не контейнера
-			return fmt.Sprintf("http://localhost:%s", hostPort), config.VNCPassword
-		}
-	}
+    parts := strings.Split(portStr, ":")
+    if len(parts) >= 2 {
+        hostPort := parts[len(parts)-1]
+        if _, err := strconv.Atoi(hostPort); err == nil {
+            // ✅ Берём IP из переменной окружения SERVER_IP
+            serverIP := os.Getenv("SERVER_IP")
+            if serverIP == "" {
+                serverIP = "localhost" // fallback для разработки
+            }
+            return fmt.Sprintf("http://%s:%s", serverIP, hostPort), config.VNCPassword
+        }
+    }
 
-	return "http://localhost:6080", config.VNCPassword
+    return "http://localhost:6080", config.VNCPassword
 }
 
 // IsRunning checks if container exists and is running.

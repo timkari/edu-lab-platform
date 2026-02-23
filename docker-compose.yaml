@@ -15,6 +15,7 @@ services:
     environment:
       - TZ=Europe/Moscow
       - DOCKER_HOST=unix:///var/run/docker.sock
+      - SERVER_IP=192.168.31.117
     privileged: true
     restart: unless-stopped
 
