@@ -3,7 +3,9 @@ package server
 import (
 	"encoding/json"
 	"fmt"
+	"net"
 	"net/http"
+	urlpkg "net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -72,12 +74,31 @@ func HandleStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the actual URL with dynamic port
-	url, password := lab.Info(req.StudentID)
+	// Get the actual URL with dynamic port (from Docker)
+	labURL, password := lab.Info(req.StudentID)
+
+	// Перестраиваем URL, чтобы использовать тот же хост, по которому пользователь
+	// открывает веб-интерфейс (r.Host), а не localhost внутри контейнера.
+	if r.Host != "" {
+		if u, err := urlpkg.Parse(labURL); err == nil {
+			host, _, errHost := net.SplitHostPort(r.Host)
+			if errHost != nil {
+				// r.Host без порта — используем как есть
+				host = r.Host
+			}
+
+			vncPort := u.Port()
+			if vncPort != "" && host != "" {
+				u.Host = net.JoinHostPort(host, vncPort)
+				labURL = u.String()
+			}
+		}
+	}
+
 	workDir, _ := lab.WorkDirPath(base, req.StudentID)
 
 	writeJSON(w, http.StatusOK, Response{OK: true, Data: map[string]string{
-		"url":      url,
+		"url":      labURL,
 		"password": password,
 		"work_dir": workDir,
 	}})
