@@ -7,6 +7,22 @@
 - Go 1.21+
 - Docker (для запуска лабораторий)
 
+## VNC-образ лаборатории (с VS Code)
+
+По умолчанию платформа запускает лабораторию из Docker-образа `edu-lab-vnc:latest` (в нём установлен VS Code и добавлен ярлык на рабочий стол).
+
+Сборка образа:
+
+```bash
+docker build -t edu-lab-vnc:latest ./lab-image
+```
+
+Если нужно вернуть оригинальный образ без VS Code, задайте переменную окружения:
+
+```bash
+LAB_IMAGE=dorowu/ubuntu-desktop-lxde-vnc:latest
+```
+
 ## Сборка
 
 ```bash

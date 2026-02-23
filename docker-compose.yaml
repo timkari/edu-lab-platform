@@ -20,6 +20,7 @@ services:
       - USE_DOCKER_VOLUMES=true  # Включаем режим volumes для Mac
       - PLATFORM=${PLATFORM:-auto}
       - SERVER_IP=${SERVER_IP:-localhost}  # IP сервера; локально можно оставить localhost
+      - LAB_IMAGE=${LAB_IMAGE:-edu-lab-vnc:latest} # VNC-образ лаборатории (с VS Code)
     # Добавляем группу docker для доступа к сокету
     group_add:
       - "999"  # стандартный GID группы docker
