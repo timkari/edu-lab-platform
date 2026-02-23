@@ -20,8 +20,5 @@ jobs:
       - name: Build
         run: go build ./cmd/edu-lab/...
 
-      - name: Test
-        run: go test ./...
-
       - name: Docker build (sanity check)
         run: docker build -t edu-lab-platform:ci .

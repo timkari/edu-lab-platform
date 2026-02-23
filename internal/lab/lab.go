@@ -149,6 +149,11 @@ func Start(basePath, studentID string) error {
 	log := logger.Get()
 	log.LogEvent("START_ATTEMPT", studentID, "starting", nil)
 
+	image := os.Getenv("LAB_IMAGE")
+	if image == "" {
+		image = config.LabImage
+	}
+
 	// Получаем источник для монтирования
 	mountSource, err := GetMountSource(studentID)
 	if err != nil {
@@ -193,7 +198,7 @@ func Start(basePath, studentID string) error {
 		"-e", fmt.Sprintf("VNC_PW=%s", config.VNCPassword),
 		"--memory", "512m",
 		"--cpus", "0.5",
-		config.LabImage,
+		image,
 	}
 
 	// Добавляем platform для Mac (чтобы избежать предупреждений)

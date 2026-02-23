@@ -14,6 +14,7 @@ jobs:
 
       - name: Deploy with Docker Compose
         run: |
+          docker build -t edu-lab-vnc:latest ./lab-image
           docker-compose down
           docker-compose up -d --build
 
