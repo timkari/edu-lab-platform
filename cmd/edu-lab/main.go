@@ -96,7 +96,12 @@ func main() {
 		}
 
 		url, password := lab.Info(name)
-		workDir, _ := lab.WorkDirPath(base, name)
+		// В main.go, в функции start:
+		workDir, err := lab.WorkDirPath(base, name)
+		if err != nil {
+			log.Warn("Could not get work dir path: %v", err)
+			workDir = "unknown"
+		}
 
 		log.LogEvent("START_SUCCESS", name, "успешно", map[string]string{
 			"url":      url,
