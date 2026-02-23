@@ -267,7 +267,12 @@ func Info(studentID string) (url, password string) {
 	if len(parts) >= 2 {
 		hostPort := parts[len(parts)-1]
 		if _, err := strconv.Atoi(hostPort); err == nil {
-			return fmt.Sprintf("http://localhost:%s", hostPort), config.VNCPassword
+			// ✅ Берём IP из переменной окружения SERVER_IP
+			serverIP := os.Getenv("SERVER_IP")
+			if serverIP == "" {
+				serverIP = "localhost" // fallback для разработки
+			}
+			return fmt.Sprintf("http://%s:%s", serverIP, hostPort), config.VNCPassword
 		}
 	}
 
