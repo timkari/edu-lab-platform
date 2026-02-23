@@ -1,22 +1,27 @@
-name: PipeLine
+name: PR Checks
+
 on:
-  push:
-    branches:
-      - main
   pull_request:
     branches:
       - main
 
 jobs:
-  build:
-    runs-on: self-hosted
+  test:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
-      - name: Run Docker Compose
-        run: |
-          docker-compose down
-          docker-compose up -d --build
 
-          
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21'
+
+      - name: Build
+        run: go build ./cmd/edu-lab/...
+
+      - name: Test
+        run: go test ./...
+
+      - name: Docker build (sanity check)
+        run: docker build -t edu-lab-platform:ci .
