@@ -18,12 +18,13 @@ services:
       - TZ=Europe/Moscow
       - DOCKER_HOST=unix:///var/run/docker.sock
       - USE_DOCKER_VOLUMES=true  # Включаем режим volumes для Mac
-      - PLATFORM=${PLATFORM:-auto}  # auto, mac, linux, windows
+      - PLATFORM=${PLATFORM:-auto}
+      - SERVER_IP=192.168.31.117  # auto, mac, linux, windows
     # Добавляем группу docker для доступа к сокету
     group_add:
       - "999"  # стандартный GID группы docker
       - "1000" # запасной вариант
-      - SERVER_IP=192.168.31.117
+      
     privileged: true
     restart: unless-stopped
 
