@@ -144,10 +144,15 @@ func isPortAvailable(port int) bool {
 	return true
 }
 
-// Start runs Docker container with VNC desktop
-func Start(basePath, studentID string) error {
+// Start runs Docker container with VNC desktop.
+// dockerImage — полный образ Docker; если пусто, используется config.LabDockerImage().
+func Start(basePath, studentID, dockerImage string) error {
 	log := logger.Get()
 	log.LogEvent("START_ATTEMPT", studentID, "starting", nil)
+
+	if dockerImage == "" {
+		dockerImage = config.LabDockerImage()
+	}
 
 	// Получаем источник для монтирования
 	mountSource, err := GetMountSource(studentID)
@@ -193,7 +198,7 @@ func Start(basePath, studentID string) error {
 		"-e", fmt.Sprintf("VNC_PW=%s", config.VNCPassword),
 		"--memory", "512m",
 		"--cpus", "0.5",
-		config.LabImage,
+		dockerImage,
 	}
 
 	// Добавляем platform для Mac (чтобы избежать предупреждений)

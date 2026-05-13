@@ -13,10 +13,14 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        
-      - name: Run Docker Compose
+
+      - name: Go unit tests
+        run: go test ./tests/... -count=1
+
+      - name: Build lab image (Geany) and run Docker Compose
         run: |
-          docker-compose down
-          docker-compose up -d --build
+          docker compose down || true
+          make lab-image
+          LAB_IMAGE=edu-lab-lab-vnc:geany docker compose up -d --build
 
           

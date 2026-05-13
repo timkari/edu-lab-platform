@@ -9,7 +9,9 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/edu-lab-platform/internal/auth"
 	"github.com/edu-lab-platform/internal/backup"
+	"github.com/edu-lab-platform/internal/db"
 	"github.com/edu-lab-platform/internal/lab"
 )
 
@@ -67,7 +69,7 @@ func HandleStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	base := BasePath()
-	if err := lab.Start(base, req.StudentID); err != nil {
+	if err := lab.Start(base, req.StudentID, ""); err != nil {
 		writeJSON(w, http.StatusInternalServerError, Response{OK: false, Error: err.Error()})
 		return
 	}
@@ -179,6 +181,18 @@ func HandleStatus(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if db.DB() != nil {
+		c, err := auth.ParseToken(r.Header.Get("Authorization"))
+		if err != nil {
+			writeJSON(w, http.StatusUnauthorized, Response{OK: false, Error: "unauthorized"})
+			return
+		}
+		if c.Role != "admin" && studentID != c.StudentID {
+			writeJSON(w, http.StatusForbidden, Response{OK: false, Error: "forbidden"})
+			return
+		}
+	}
+
 	running, err := lab.IsRunning(studentID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, Response{OK: false, Error: err.Error()})
@@ -234,22 +248,34 @@ func HandleList(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, Response{OK: true, Data: students})
 }
 
-// WebDir returns path to web static files (next to executable, in cwd, or in cwd/edu-lab-platform).
+// WebDir returns path to web static files: предпочитает Vite-сборку web/dist.
 func WebDir() string {
 	base := BasePath()
 	try := []string{
-		filepath.Join(base, "web"),
-		filepath.Join(base, "edu-lab-platform", "web"),
+		filepath.Join(base, "web", "dist"),
+		filepath.Join(base, "edu-lab-platform", "web", "dist"),
 	}
 	if execPath, err := os.Executable(); err == nil {
-		try = append([]string{filepath.Join(filepath.Dir(execPath), "web")}, try...)
+		try = append([]string{filepath.Join(filepath.Dir(execPath), "web", "dist")}, try...)
 	}
 	for _, d := range try {
 		if _, err := os.Stat(filepath.Join(d, "index.html")); err == nil {
 			return d
 		}
 	}
-	return filepath.Join(base, "web")
+	tryLegacy := []string{
+		filepath.Join(base, "web"),
+		filepath.Join(base, "edu-lab-platform", "web"),
+	}
+	if execPath, err := os.Executable(); err == nil {
+		tryLegacy = append([]string{filepath.Join(filepath.Dir(execPath), "web")}, tryLegacy...)
+	}
+	for _, d := range tryLegacy {
+		if _, err := os.Stat(filepath.Join(d, "index.html")); err == nil {
+			return d
+		}
+	}
+	return filepath.Join(base, "web", "dist")
 }
 
 // HandleGetLogs returns recent logs
@@ -277,14 +303,37 @@ func HandleGetLogs(w http.ResponseWriter, r *http.Request) {
 // Mux returns http.ServeMux with all routes and static frontend.
 func Mux() *http.ServeMux {
 	m := http.NewServeMux()
-	m.HandleFunc("/api/start", HandleStart)
-	m.HandleFunc("/api/stop", HandleStop)
-	m.HandleFunc("/api/backup", HandleBackup)
-	m.HandleFunc("/api/restore", HandleRestore)
-	m.HandleFunc("/api/structure", HandleStructure)
-	m.HandleFunc("/api/logs", HandleGetLogs)
-	m.HandleFunc("/api/status", HandleStatus) // НОВЫЙ МАРШРУТ
-	m.HandleFunc("/api/list", HandleList)     // НОВЫЙ МАРШРУТ для админки
+
+	if db.DB() != nil {
+		m.Handle("/api/start", chainAdmin(http.HandlerFunc(HandleStart)))
+		m.Handle("/api/stop", chainAdmin(http.HandlerFunc(HandleStop)))
+		m.Handle("/api/backup", chainAdmin(http.HandlerFunc(HandleBackup)))
+		m.Handle("/api/restore", chainAdmin(http.HandlerFunc(HandleRestore)))
+		m.Handle("/api/structure", chainAdmin(http.HandlerFunc(HandleStructure)))
+		m.Handle("/api/logs", chainAdmin(http.HandlerFunc(HandleGetLogs)))
+		m.Handle("/api/list", chainAdmin(http.HandlerFunc(HandleList)))
+		m.HandleFunc("/api/auth/login", handleAuthLogin)
+		m.Handle("/api/auth/logout", chainStudentOrAdmin(http.HandlerFunc(handleAuthLogout)))
+		m.Handle("/api/templates", chainStudentOrAdmin(http.HandlerFunc(handleTemplatesList)))
+		m.Handle("/api/request/create", chainStudent(http.HandlerFunc(handleRequestCreate)))
+		m.Handle("/api/request/delete", chainStudent(http.HandlerFunc(handleRequestDelete)))
+		m.Handle("/api/request/my", chainStudent(http.HandlerFunc(handleRequestMy)))
+		m.Handle("/api/request/all", chainAdmin(http.HandlerFunc(handleRequestAll)))
+		m.Handle("/api/request/approve", chainAdmin(http.HandlerFunc(handleRequestApprove)))
+		m.Handle("/api/request/reject", chainAdmin(http.HandlerFunc(handleRequestReject)))
+		m.Handle("/api/request/cancel", chainStudent(http.HandlerFunc(handleRequestCancel)))
+		m.Handle("/api/session/ping", chainStudent(http.HandlerFunc(handleSessionPing)))
+		m.Handle("/api/session/me", chainStudent(http.HandlerFunc(handleSessionMe)))
+	} else {
+		m.HandleFunc("/api/start", HandleStart)
+		m.HandleFunc("/api/stop", HandleStop)
+		m.HandleFunc("/api/backup", HandleBackup)
+		m.HandleFunc("/api/restore", HandleRestore)
+		m.HandleFunc("/api/structure", HandleStructure)
+		m.HandleFunc("/api/logs", HandleGetLogs)
+		m.HandleFunc("/api/list", HandleList)
+	}
+	m.HandleFunc("/api/status", HandleStatus)
 	m.Handle("/", http.FileServer(http.Dir(WebDir())))
 
 	return m

@@ -1,25 +1,23 @@
-# Dockerfile
-FROM golang:1.21-alpine AS builder
+# Сборка React (Vite)
+FROM node:20-alpine AS webbuilder
+WORKDIR /web
+COPY web/package.json ./
+RUN npm install --no-audit --no-fund
+COPY web/ ./
+RUN npm run build
 
+# Сборка Go
+FROM golang:1.25-alpine AS gobuilder
 WORKDIR /app
-
-# Копируем go.mod и go.sum (если есть)
-COPY go.mod ./
-# COPY go.sum ./
-
-# Скачиваем зависимости
+COPY go.mod go.sum ./
 RUN go mod download
-
-# Копируем весь исходный код
 COPY . .
-
-# Собираем приложение
-RUN go build -o edu-lab ./cmd/edu-lab
+COPY --from=webbuilder /web/dist ./web/dist
+RUN CGO_ENABLED=0 go build -o edu-lab ./cmd/edu-lab
 
 # Финальный образ
-FROM alpine:latest
+FROM alpine:3.19
 
-# Устанавливаем необходимые пакеты
 RUN apk add --no-cache \
     docker \
     docker-cli \
@@ -29,29 +27,13 @@ RUN apk add --no-cache \
     lsof \
     && rm -rf /var/cache/apk/*
 
-# Создаем необходимые директории
-RUN mkdir -p /app/logs \
-    /app/students \
-    /app/backups \
-    /app/web
+RUN mkdir -p /app/logs /app/students /app/backups /app/web/dist
 
-# Копируем скомпилированное приложение
-COPY --from=builder /app/edu-lab /usr/local/bin/
+COPY --from=gobuilder /app/edu-lab /usr/local/bin/
+COPY --from=webbuilder /web/dist /app/web/dist
 
-# Копируем веб-интерфейс
-COPY web/index.html /app/web/
-
-# Устанавливаем рабочую директорию
 WORKDIR /app
-
-# Открываем порты
-EXPOSE 9000 8080
-
-# Добавляем пользователя
-RUN adduser -D -h /app labuser && \
-    chown -R labuser:labuser /app
-
-USER labuser
+EXPOSE 9000
 
 ENTRYPOINT ["edu-lab"]
 CMD ["-server", "-port=9000"]

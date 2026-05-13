@@ -10,6 +10,8 @@ import (
 	"path/filepath"
 
 	"github.com/edu-lab-platform/internal/backup"
+	"github.com/edu-lab-platform/internal/db"
+	"github.com/edu-lab-platform/internal/idle"
 	"github.com/edu-lab-platform/internal/lab"
 	"github.com/edu-lab-platform/internal/logger"
 	"github.com/edu-lab-platform/internal/server"
@@ -45,13 +47,26 @@ func main() {
 			os.Exit(1)
 		}
 
+		if os.Getenv("DATABASE_URL") != "" {
+			if err := db.Init(); err != nil {
+				log.Error("База данных: %v", err)
+				fmt.Printf("❌ Ошибка подключения к БД: %v\n", err)
+				os.Exit(1)
+			}
+			log.Info("PostgreSQL и миграции готовы")
+			idle.StartReaper(basePath())
+		} else {
+			log.Warn("DATABASE_URL не задан — API заявок и JWT недоступны")
+		}
+
 		addr := ":" + *port
 
 		log.Info("🚀 Запуск HTTP API сервера на порту %s", *port)
 		fmt.Println("🎓 Виртуальная лаборатория — API")
 		fmt.Println("   http://localhost" + addr)
-		fmt.Println("   POST /api/start, /api/stop, /api/backup, /api/restore, /api/structure")
-		fmt.Println("   GET /api/status, /api/list, /api/logs")
+		fmt.Println("   POST /api/auth/login, /api/templates")
+		fmt.Println("   POST /api/request/create|delete|cancel, GET /api/request/my, GET /api/session/me, POST /api/session/ping")
+		fmt.Println("   (admin) GET /api/request/all, POST approve|reject; legacy: /api/start …")
 
 		if err := http.ListenAndServe(addr, server.Mux()); err != nil {
 			log.Error("❌ Сервер остановлен с ошибкой: %v", err)
@@ -89,7 +104,7 @@ func main() {
 			os.Exit(1)
 		}
 
-		if err := lab.Start(base, name); err != nil {
+		if err := lab.Start(base, name, ""); err != nil {
 			log.Error("Ошибка запуска лаборатории для %s: %v", name, err)
 			fmt.Printf("❌ Ошибка запуска: %v\n", err)
 			os.Exit(1)
@@ -347,7 +362,7 @@ func runTestLab(base string) {
 		os.Exit(1)
 	}
 
-	if err := lab.Start(base, "test_lab_user"); err != nil {
+	if err := lab.Start(base, "test_lab_user", ""); err != nil {
 		log.Error("Ошибка запуска: %v", err)
 		fmt.Printf("❌ Ошибка: %v\n", err)
 		os.Exit(1)

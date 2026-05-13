@@ -1,34 +1,52 @@
-version: '3.8'
-
 services:
+  db:
+    image: postgres:15-alpine
+    container_name: virtual-lab-db
+    environment:
+      POSTGRES_USER: edu
+      POSTGRES_PASSWORD: edu
+      POSTGRES_DB: edulab
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U edu -d edulab"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+
   lab-platform:
     build: .
     container_name: virtual-lab
     user: root
+    depends_on:
+      db:
+        condition: service_healthy
     ports:
-      - "9000:9000"              # API платформы
+      - "9000:9000"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      # Используем именованные volumes для данных (работает на всех платформах!)
       - lab-students:/app/students
       - lab-backups:/app/backups
       - lab-logs:/app/logs
-      - ./web:/app/web
     environment:
       - TZ=Europe/Moscow
       - DOCKER_HOST=unix:///var/run/docker.sock
-      - USE_DOCKER_VOLUMES=true  # Включаем режим volumes для Mac
+      - USE_DOCKER_VOLUMES=true
+      # Без этого lab.Start поднимает stock doro без Geany и без правок рабочего стола.
+      - LAB_IMAGE=${LAB_IMAGE:-edu-lab-lab-vnc:geany}
+      - SESSION_IDLE_MINUTES=${SESSION_IDLE_MINUTES:-60}
       - PLATFORM=${PLATFORM:-auto}
-      - SERVER_IP=192.168.31.117  # auto, mac, linux, windows
-    # Добавляем группу docker для доступа к сокету
+      - SERVER_IP=${SERVER_IP:-localhost}
+      - DATABASE_URL=postgres://edu:edu@db:5432/edulab?sslmode=disable
+      - JWT_SECRET=${JWT_SECRET:-change-me-in-production}
     group_add:
-      - "999"  # стандартный GID группы docker
-      - "1000" # запасной вариант
-      
+      - "999"
+      - "1000"
     privileged: true
     restart: unless-stopped
 
 volumes:
+  pgdata:
   lab-students:
   lab-backups:
   lab-logs:
